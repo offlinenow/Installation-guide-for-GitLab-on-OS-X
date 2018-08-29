@@ -144,11 +144,11 @@ Login to PostgreSQL
 ```
 psql -d postgres
 ```
- Create the `pg_trgm` extension (required for GitLab 8.6+):
+Create the `pg_trgm` extension (required for GitLab 8.6+):
 
-    ```bash
-    sudo -u postgres psql -d template1 -c "CREATE EXTENSION IF NOT EXISTS pg_trgm;"
-    ```
+```bash
+sudo -u postgres psql -d template1 -c "CREATE EXTENSION IF NOT EXISTS pg_trgm;"
+```
 Create a user for GitLab.
 
 ```
