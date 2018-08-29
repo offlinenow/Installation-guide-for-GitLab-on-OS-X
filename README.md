@@ -1,6 +1,5 @@
-# Installation guide for GitLab 10.1 on OS X 10.11
+# Installation guide for GitLab 11.2 on OS X
 
-> This is WIP version for OS X 10.11. For OS X 10.10 see [10.10 branch](https://github.com/WebEntity/Installation-guide-for-GitLab-on-OS-X/tree/10.10).
 
 ## Overview
 
@@ -29,39 +28,7 @@ Homebrew
 ```
 ruby -e "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/master/install)"
 brew install icu4c git logrotate libxml2 cmake pkg-config openssl
-brew link openssl --force
-```
-
-Make sure you have python 2.5+ (gitlab don’t support python 3.x)
-
-Confirm python 2.5+
-
-```
-python --version
-```
-
-GitLab looks for python2
-
-```
-sudo ln -s /usr/bin/python /usr/bin/python2
-```
-
-> On OS X 10.11 it won't work. You need to disable [SIP](https://en.wikipedia.org/wiki/System_Integrity_Protection).
-
-Some more dependices
-
-```
-sudo easy_install pip
-sudo pip install pygments
-```
-
-Install `docutils` from [source](http://sourceforge.net/projects/docutils/files/latest/download?source=files).
-
-```
-curl -O http://heanet.dl.sourceforge.net/project/docutils/docutils/0.12/docutils-0.12.tar.gz
-gunzip -c docutils-0.12.tar.gz | tar xopf -
-cd docutils-0.12
-sudo python setup.py install
+export PATH=/usr/local/opt/openssl/bin:$PATH
 ```
 
 ## 2. Ruby
@@ -97,22 +64,21 @@ echo 'eval "$(rbenv init - --no-rehash)"' >> ~/.bash_profile
 Install ruby for the git user
 
 ```
-sudo -u git -H -i 'rbenv install 2.3.3'
-sudo -u git -H -i 'rbenv global 2.3.3'
+sudo -u git -H -i 'rbenv install 2.4.4'
+sudo -u git -H -i 'rbenv global 2.4.4'
 ```
 
 Install ruby for your user too (optional)
 
 ```
-rbenv install 2.3.3
-rbenv global 2.3.3
+rbenv install 2.4.4
+rbenv global 2.4.4
 ```
 
 ## 3. Go
 
-Since GitLab 8.0, Git HTTP requests are handled by gitlab-git-http-server.
-This is a small daemon written in Go.
-To install gitlab-git-http-server we need a Go compiler.
+Since GitLab 8.0, GitLab has several daemons written in Go. To install
+GitLab we need a Go compiler.    
 
 ```
 brew install go
@@ -123,7 +89,7 @@ brew install go
 Since GitLab 8.17, GitLab requires the use of node >= v4.3.0 to compile javascript assets, and yarn >= v0.17.0 to manage javascript dependencies. In many distros the versions provided by the official package repositories are out of date, so we'll need to install through the following commands:
 
 ```
-brew install node yarn
+brew install node@8 yarn
 ```
 
 ## 5. System User
@@ -164,12 +130,13 @@ sudo defaults delete /Library/Preferences/com.apple.loginwindow HiddenUsersList
 
 ## 6. Database
 
-Gitlab recommends using a PostgreSQL database. But you can use MySQL too, see [MySQL setup guide](database_mysql.md).
+Gitlab recommends using a PostgreSQL database. But you can use MySQL too, see [MySQL setup guide](https://docs.gitlab.com/ee/install/database_mysql.html).
+> **Note**: because we need to make use of extensions and concurrent index removal,
+you need at least PostgreSQL 9.2.
 
 ```
 brew install postgresql
-ln -sfv /usr/local/opt/postgresql/*.plist ~/Library/LaunchAgents
-launchctl load ~/Library/LaunchAgents/homebrew.mxcl.postgresql.plist
+brew services start postgresql
 ```
 
 Login to PostgreSQL
@@ -177,7 +144,11 @@ Login to PostgreSQL
 ```
 psql -d postgres
 ```
+ Create the `pg_trgm` extension (required for GitLab 8.6+):
 
+    ```bash
+    sudo -u postgres psql -d template1 -c "CREATE EXTENSION IF NOT EXISTS pg_trgm;"
+    ```
 Create a user for GitLab.
 
 ```
@@ -189,6 +160,25 @@ Create the GitLab production database & grant all privileges on database
 ```
 CREATE DATABASE gitlabhq_production OWNER git;
 ```
+
+Check if the `pg_trgm` extension is enabled:
+
+```sql
+SELECT true AS enabled
+FROM pg_available_extensions
+WHERE name = 'pg_trgm'
+AND installed_version IS NOT NULL;
+```
+
+If the extension is enabled this will produce the following output:
+
+```
+enabled
+---------
+t
+(1 row)
+```
+
 
 Quit the database session
 
@@ -206,32 +196,19 @@ sudo -u git -H psql -d gitlabhq_production
 
 ```
 brew install redis
-ln -sfv /usr/local/opt/redis/*.plist ~/Library/LaunchAgents
-```
-
-Redis config is located in `/usr/local/etc/redis.conf`. Make a copy:
-
-```
-cp /usr/local/etc/redis.conf /usr/local/etc/redis.conf.orig
-```
-
-Disable Redis listening on TCP by setting 'port' to 0
-
-```
-sed 's/^port .*/port 0/' /usr/local/etc/redis.conf.orig | sudo tee /usr/local/etc/redis.conf
 ```
 
 Edit file (`nano /usr/local/etc/redis.conf`) and uncomment:
 
 ```
 unixsocket /tmp/redis.sock
-unixsocketperm 777
+unixsocketperm 766
 ```
 
 Start Redis
 
 ```
-launchctl load ~/Library/LaunchAgents/homebrew.mxcl.redis.plist
+brew services start redis
 ```
 
 ## 8. GitLab
@@ -245,10 +222,10 @@ cd /Users/git
 Clone GitLab repository
 
 ```
-sudo -u git -H git clone https://gitlab.com/gitlab-org/gitlab-ce.git -b 8-11-stable gitlab
+sudo -u git -H git clone https://gitlab.com/gitlab-org/gitlab-ce.git -b 11-2-stable gitlab
 ```
 
-**Note:** You can change `8-11-stable` to `master` if you want the *bleeding edge* version, but never install master on a production server!
+**Note:** You can change `11-2-stable` to `master` if you want the *bleeding edge* version, but never install master on a production server!
 
 ### Configure It
 
@@ -410,31 +387,20 @@ sudo -u git -H chmod o-rwx config/database.yml
 
 ### Install Gems
 
-**Note:** As of bundler 1.5.2, you can invoke `bundle install -jN` (where `N` the number of your processor cores) and enjoy the parallel gems installation with measurable difference in completion time (~60% faster). Check the number of your cores with `nproc`. For more information check this [post](http://robots.thoughtbot.com/parallel-gem-installing-using-bundler). First make sure you have bundler >= 1.5.2 (run `bundle -v`) as it addresses some [issues](https://devcenter.heroku.com/changelog-items/411) that were [fixed](https://github.com/bundler/bundler/pull/2817) in 1.5.2.
-
-Preparation:
-
-```
-sudo su git
-. ~/.profile
-gem install bundler --no-ri --no-rdoc
-rbenv rehash
-cd ~/gitlab/
-```
+**Note:** As of bundler 1.5.2, you can invoke `bundle install -jN` (where `N` the number of your processor cores) and enjoy the parallel gems installation with measurable difference in completion time (~60% faster). Check the number of your cores with `sysctl -n hw.ncpu`. For more information check this [post](http://robots.thoughtbot.com/parallel-gem-installing-using-bundler).First make sure you have bundler >= 1.5.2 (run `bundle -v`) as it addresses some [issues](https://devcenter.heroku.com/changelog-items/411) that were [fixed](https://github.com/bundler/bundler/pull/2817) in 1.5.2.
 
 For PostgreSQL (note, the option says "without ... mysql")
 
 ```
-bundle install --deployment --without development test mysql aws kerberos
+bundle install --deployment --without development test mysql aws
 ```
 
 Or if you use MySQL (note, the option says "without ... postgres")
 
 ```
-bundle install --deployment --without development test postgres aws kerberos
+bundle install --deployment --without development test postgres aws
 ```
 
-**Note:** If you want to use Kerberos for user authentication, then omit `kerberos` in the `--without` option above.
 
 ### Install GitLab Shell
 
@@ -469,7 +435,7 @@ sudo -u git -H nano /Users/git/gitlab-shell/config.yml
 
 ```
 cd /Users/git/gitlab
-bundle exec rake "gitlab:workhorse:install[/Users/git/gitlab-workhorse]" RAILS_ENV=production
+sudo -u git -H bundle exec rake "gitlab:workhorse:install[/Users/git/gitlab-workhorse]" RAILS_ENV=production
 ```
 
 ### Initialize Database and Activate Advanced Features
@@ -478,16 +444,16 @@ bundle exec rake "gitlab:workhorse:install[/Users/git/gitlab-workhorse]" RAILS_E
 sudo su git
 . ~/.profile
 cd ~/gitlab/
-bundle exec rake gitlab:setup RAILS_ENV=production
+sudo -u git -H bundle exec rake gitlab:setup RAILS_ENV=production
 ```
 
 Type 'yes' to create the database tables.
 When done you see 'Administrator account created:
 
-**Note:** You can set the Administrator/root password by supplying it in environmental variable `GITLAB_ROOT_PASSWORD` as seen below. If you don't set the password (and it is set to the default one) please wait with exposing GitLab to the public internet until the installation is done and you've logged into the server the first time. During the first login you'll be forced to change the default password.
+**Note:** You can set the Administrator/root password by supplying it in environmental variable `GITLAB_ROOT_PASSWORD` as seen below. If you don't set the password (and it is set to the default one) please wait with exposing GitLab to the public internet until the installation is done and you've logged into the server the first time. Default username is `root` and password is `5iveL!fe`. During the first login you'll be forced to change the default password.
 
 ```
-bundle exec rake gitlab:setup RAILS_ENV=production GITLAB_ROOT_PASSWORD=yourpassword
+sudo -u git -H bundle exec rake gitlab:setup RAILS_ENV=production GITLAB_ROOT_PASSWORD=yourpassword
 ```
 
 ### Secure secrets.yml
@@ -548,8 +514,8 @@ For more information about configuring Gitaly see
 ```
 sudo cp lib/support/logrotate/gitlab /usr/local/etc/logrotate.d/gitlab
 sudo sed -i "" "s/\/home/\/Users/g" /usr/local/etc/logrotate.d/gitlab
-ln -sfv /usr/local/opt/logrotate/*.plist ~/Library/LaunchAgents
-launchctl load ~/Library/LaunchAgents/homebrew.mxcl.logrotate.plist
+brew install logrotate
+brew services start logrotate
 ```
 
 ### Check Application Status
@@ -589,7 +555,6 @@ sudo sh /etc/init.d/gitlab start
 ### Installation
 ```
 brew install nginx
-sudo mkdir -p /var/log/nginx/
 ```
 
 ### Site Configuration
@@ -660,7 +625,7 @@ you'll be redirected to a password reset screen to provide the password for the
 initial administrator account. Enter your desired password and you'll be
 redirected back to the login screen.
 
-The default account's username is **root**. Provide the password you created
+The default account's username is **root** and password is **5iveL!fe**. Provide the password you created
 earlier and login. After login you can change the username if you wish.
 
 **Enjoy!**
@@ -669,12 +634,10 @@ You can use `sudo sh /etc/init.d/gitlab start`, `sudo sh /etc/init.d/gitlab stop
 
 ### Autostart on boot
 
-Copy Nginx and Gitlab plists and load it:
 
 ```
-sudo cp /usr/local/opt/nginx/homebrew.mxcl.nginx.plist /Library/LaunchDaemons/
+sudo brew services start nginx
 sudo cp com.webentity.gitlab.plist /Library/LaunchDaemons/
-sudo launchctl load /Library/LaunchDaemons/homebrew.mxcl.nginx.plist
 sudo launchctl load /Library/LaunchDaemons/com.webentity.gitlab.plist
 ```
 
@@ -754,10 +717,94 @@ If you're installing from source and use SMTP to deliver mail, you will need to 
 ActionMailer::Base.delivery_method = :smtp
 ```
 
-See [smtp_settings.rb.sample](https://gitlab.com/gitlab-org/gitlab-ce/blob/8-15-stable/config/initializers/smtp_settings.rb.sample#L13) as an example.
+See [smtp_settings.rb.sample](https://gitlab.com/gitlab-org/gitlab-ce/blob/11-2-stable/config/initializers/smtp_settings.rb.sample#L13) as an example.
+
+### Relative URL
+1. Install `gnu-sed`
+	
+	```bash
+	brew install gnu-sed
+	```
+
+2. Stop Gitlab  
+
+	```bash
+	sudo launchctl unload /Library/LaunchDaemons/com.webentity.gitlab.plist
+	```
+
+3.  Create `relative_url.rb`    
+
+	```bash
+	cp /Users/git/gitlab/config/initializers/relative_url.rb.sample \ 
+		/Users/git/gitlab/config/initializers/relative_url.rb
+	```  
+	and change the following line:  
+	
+	```ruby
+	config.relative_url_root = "/gitlab"
+	```
+	
+4. Edit `/Users/git/gitlab/config/gitlab.yml` and uncomment/change the following line:
+
+	```yaml
+	relative_url_root: /gitlab
+	```
+	
+5. Edit `/Users/git/gitlab/config/unicorn.rb` and uncomment/change the following line:  
+
+	```ruby
+	ENV['RAILS_RELATIVE_URL_ROOT'] = "/gitlab"
+	```
+
+6. Edit `/Users/git/gitlab-shell/config.yml` and append the relative path to the following line:
+ 
+ 	```yaml
+ 	gitlab_url: http://127.0.0.1/gitlab
+ 	```
+ 	
+7. Make sure you have copied the supplied init script and the defaults file
+    as stated in the [installation guide](installation.md#install-init-script).
+    Then, edit `/etc/default/gitlab` and set in `gitlab_workhorse_options` the
+    `-authBackend` setting to read like:
+
+    ```shell
+    -authBackend http://127.0.0.1:8080/gitlab
+    ```
+
+    **Note:**
+    If you are using a custom init script, make sure to edit the above
+    gitlab-workhorse setting as needed.
+
+8. Edit `/usr/local/etc/nginx/servers/gitlab` and change following line
+
+	```
+	location / {
+	```
+	to
+	
+	```
+	location /gitlab {
+	```
+9. Edit `/Users/git/gitlab/lib/tasks/gitlab/assets.rake` and change following line 
+
+	```ruby
+	system "sed", "-i", "-e", 's/url(\([\"\']\?\)\/assets\//url(\1.\//g', file
+	```
+	to
+	
+	```ruby
+	system "gsed", "-i", "-e", 's/url(\([\"\']\?\)\/assets\//url(\1.\//g', file
+	```
+10. Execute `sudo -u git -H bundle exec rake gitlab:assets:fix_urls RAILS_ENV=production`
+11. Reload `nginx`  
+
+	```
+	sudo nginx -t reload
+	```
+12. [Restart Gitlab](https://docs.gitlab.com/ee/administration/restart_gitlab.html#installations-from-source) for the changes to take effect.
 
 ### More
 
-You can find more tips in [official documentation](https://github.com/gitlabhq/gitlabhq/blob/8-0-stable/doc/install/installation.md#advanced-setup-tips).
+You can find more tips in [official documentation](https://github.com/gitlabhq/gitlabhq/blob/11-2-stable/doc/install/installation.md#advanced-setup-tips).
 
 ## Todo
