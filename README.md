@@ -795,6 +795,7 @@ See [smtp_settings.rb.sample](https://gitlab.com/gitlab-org/gitlab-ce/blob/11-2-
 	```ruby
 	system "gsed", "-i", "-e", 's/url(\([\"\']\?\)\/assets\//url(\1.\//g', file
 	```
+	**Tips** You can commit this change and use `git cherry-pick [commit-hash]` to apply patch after upgrading Gitlab.
 10. Execute `sudo -u git -H bundle exec rake gitlab:assets:fix_urls RAILS_ENV=production`
 11. Reload `nginx`  
 
@@ -802,6 +803,9 @@ See [smtp_settings.rb.sample](https://gitlab.com/gitlab-org/gitlab-ce/blob/11-2-
 	sudo nginx -t reload
 	```
 12. [Restart Gitlab](https://docs.gitlab.com/ee/administration/restart_gitlab.html#installations-from-source) for the changes to take effect.
+
+### Troubleshooting
+If your `PATH` env has a blankapsce, you may find `gitlab-workhourse` fail to start. Edit `/etc/init.d/gitlab` and replace `/usr/bin/env` with `export`.
 
 ### More
 
