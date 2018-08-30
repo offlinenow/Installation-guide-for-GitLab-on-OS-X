@@ -805,7 +805,7 @@ See [smtp_settings.rb.sample](https://gitlab.com/gitlab-org/gitlab-ce/blob/11-2-
 12. [Restart Gitlab](https://docs.gitlab.com/ee/administration/restart_gitlab.html#installations-from-source) for the changes to take effect.
 
 ### Troubleshooting
-If your `PATH` env has a blankapsce, you may find `gitlab-workhourse` fail to start. Edit `/etc/init.d/gitlab` and replace `/usr/bin/env` with `export`.
+If your `PATH` env has a blankapsce, you may find `gitlab-workhourse` fail to start. Edit `/etc/init.d/gitlab` and surround `$PATH` with `""`
 
 ### More
 
